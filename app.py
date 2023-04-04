@@ -2,10 +2,9 @@ import boto3
 from dotenv import load_dotenv
 import os
 from boto3.dynamodb.conditions import Key, Attr
-
-load_dotenv()
-
-
+import numpy as np
+import seaborn as sns
+import matplotlib.pyplot as plt
 
 class DynamoDB:
     def __init__(self):
@@ -61,16 +60,100 @@ class DynamoDB:
                 )
                 print("Inserting item")
 
-    def get_data(self):
-        table = self.dynamodb.Table('users')
+    def create_heatmap_table(self):
+        try:
+            table = self.client.create_table(
+                TableName='heatmaps',
+                KeySchema=[
+                    {
+                        'AttributeName': 'section',
+                        'KeyType': 'HASH'
+                    },
+                    {
+                        'AttributeName': 'reading',
+                        'KeyType': 'RANGE'
+                    }
+                ],
+                AttributeDefinitions=[
+                    {
+                        'AttributeName': 'section',
+                        'AttributeType': 'S'
+                    },
+                    {
+                        'AttributeName': 'reading',
+                        'AttributeType': 'S'
+                    },
+                ],
+                ProvisionedThroughput={
+                    'ReadCapacityUnits': 5,
+                    'WriteCapacityUnits': 5
+                }
+            )
+            print("Creating table...")
+            waiter = self.client.get_waiter('table_exists')
+            waiter.wait(TableName='heatmaps')
+            print("Table created")
+        except Exception as e:
+            print("Table already exists")
+    
+    def insert_heatmap_data(self):
+        randata = np.random.randint(0, 255, 9)
+        count = 1
+        table = self.dynamodb.Table('heatmaps')
+        for item in randata:
+            table.put_item(
+                Item={
+                    'section': 'section' + str(count),
+                    'reading': str(item),
+                }
+            )
+            count += 1
+
+    def delete_table(self, name):
+        try:
+            table = self.dynamodb.Table(name)
+            table.delete()
+
+            print(f"Deleteing table {name}...")
+            table.wait_until_not_exists()
+            print("Table deleted")
+        except:
+            print("Table does not exist")
+
+    def get_data(self, name, key, value):
+        table = self.dynamodb.Table(name)
         response = table.query(
-            KeyConditionExpression=Key('username').eq('johgit ndoe')
+            KeyConditionExpression=Key(key).eq(value)
         )
         items = response['Items']
         print(items)
 
+    def get_table(self, name):
+        table = self.dynamodb.Table(name)
+        try:
+            response = table.scan()
+            data = response['Items']
+            while 'LastEvaluatedKey' in response:
+                response = table.scan(ExclusiveStartKey=response['LastEvaluatedKey'])
+                data.extend(response['Items'])
+        except ClientError as e:
+            print(e.response['Error']['Message'])
+        else:
+            return response
+
+    def sample_heatmap(self, data):
+        readings = [int(x['reading']) for x in data]
+        readings2 = np.random.randint(0, 255, 10000)
+        readings2d = np.reshape(readings2, (100, 100))
+        sns.heatmap(readings2d, annot=False, cmap='jet', fmt='d')
+        plt.show()
+
 
 if __name__ == "__main__":
     dynamodb = DynamoDB()
-    dynamodb.get_data()
-    pass
+    #dynamodb.create_heatmap_table()
+    #dynamodb.insert_heatmap_data()
+    #dynamodb.get_data('heatmaps', 'section', 'section1')
+    #dynamodb.delete_table(name='heatmaps')
+    data = dynamodb.get_table('heatmaps')
+    dynamodb.sample_heatmap(data['Items'])
