@@ -143,9 +143,15 @@ class DynamoDB:
 
     def sample_heatmap(self, data):
         readings = [int(x['reading']) for x in data]
-        readings2 = np.random.randint(0, 255, 10000)
-        readings2d = np.reshape(readings2, (100, 100))
-        sns.heatmap(readings2d, annot=False, cmap='jet', fmt='d')
+        readings = readings[0:3]
+        r12 = np.average([readings[0], readings[1]])
+        r23 = np.average([readings[1], readings[2]])
+        r1n = np.average([readings[0], np.random.randint(0, 255)])
+        r3n = np.average([readings[2], np.random.randint(0, 255)])
+        tempo = [r12, readings[0], r1n, readings[1], 0, 0, r23, readings[2], r3n]
+        tempo = np.array(tempo)
+        tempo = np.reshape(tempo, (3, 3))
+        sns.heatmap(tempo, annot=True, cmap='Reds', fmt='.2f')
         plt.show()
 
 
