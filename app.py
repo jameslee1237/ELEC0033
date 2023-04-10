@@ -1,14 +1,20 @@
 import boto3
-from dotenv import load_dotenv
-import os
-from boto3.dynamodb.conditions import Key, Attr
 import numpy as np
-import seaborn as sns
 import matplotlib.pyplot as plt
-from flask import Flask, render_template
+import matplotlib
+matplotlib.use('Agg')
+import seaborn as sns
+import os
+import base64
+import json
+from boto3.dynamodb.conditions import Key, Attr
+from flask import Flask, render_template, request, url_for, jsonify
+from dotenv import load_dotenv
 from decimal import Decimal
 
-app = Flask(__name__, template_folder='templates',)
+last_modified = 0
+
+app = Flask(__name__, template_folder='templates')
 
 class DynamoDB:
     def __init__(self):
@@ -172,13 +178,14 @@ class DynamoDB:
             if os.path.exists(filename):
                 os.remove(filename)
             heatmap.figure.savefig(filename)
+            plt.clf()
             return list(latest_heatmap.keys())
 
 @app.route('/')
 def index():
     return render_template('./index.html')
 
-@app.route('/heatmap')
+@app.route('/heatmap', methods=['GET', 'POST'])
 def heatmap():
     dynamodb = DynamoDB()
     #tables = list(dynamodb.dynamodb.tables.all())
@@ -186,10 +193,45 @@ def heatmap():
     data = dynamodb.get_table("Heatmap")
     section_list = dynamodb.sample_heatmap(data['Items'])
     images = []
+    encodings = []
     for section in section_list:
         image_path = f'static/image/heatmap_{section}.png'
         images.append(image_path)
-    return render_template('./heatmap.html', images=images)
+    if request.method == 'POST':
+        data = dynamodb.get_table("Heatmap")
+        section_list = dynamodb.sample_heatmap(data['Items'])
+        images.clear()
+        for section in section_list:
+            image_path = f'static/image/heatmap_{section}.png'
+            images.append(image_path)
+    for image in images:
+        with open(image, 'rb') as image_file:
+            encoding = base64.b64encode(image_file.read()).decode('utf-8')
+            encodings.append(encoding)
+    response = {}
+    for encoding in encodings:
+        response.update({'image' + str(encodings.index(encoding)): encoding})
+    return render_template('./heatmap.html', images = encodings)
+
+@app.route("/update", methods=['POST'])
+def update():
+    if request.method == 'POST':
+        dynamodb = DynamoDB()
+        data = dynamodb.get_table("Heatmap")
+        section_list = dynamodb.sample_heatmap(data['Items'])
+        image_urls = []
+        encodings = []
+        for section in section_list:
+            image_path = f'static/image/heatmap_{section}.png'
+            image_urls.append(image_path)
+        for image in image_urls:
+            with open(image, 'rb') as image_file:
+                encoding = base64.b64encode(image_file.read()).decode('utf-8')
+                encodings.append(encoding)
+        response = {}
+        for encoding in encodings:
+            response.update({'image' + str(encodings.index(encoding)): encoding})
+        return jsonify(response)
 
 if __name__ == "__main__":
     #dynamodb = DynamoDB()

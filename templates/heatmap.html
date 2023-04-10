@@ -2,8 +2,34 @@
 {% block title %} Homepage {% endblock %}
 
 {% block content %}
-    {% for image_path in images %}
-        <h1>Heatmap</h1>
-        <img src="{{ image_path }}" alt="Heatmap">
+    <h1>Heatmap</h1>
+    {% for image in images %}
+    <div id="Heatmap_container">
+        <img id="Heatmap_image" src="data:image/png;base64, {{ image }}" alt="Heatmap">
+    </div>
     {% endfor %}
+    <form action="{{ url_for('heatmap') }}" method="POST">
+        <button type="submit" >Update</button>
+    </form>
+<script>
+    function updateHeatmap() {
+        console.log('Updating heatmap...')
+        $.ajax({
+            url: '/update',
+            type: 'POST',
+            dataType: 'json',
+            success: function(response) {
+                $('#Heatmap_image').attr('src', 'data:image/png;base64, ' + response['image0'])
+            },
+            error: function(error) {
+                console.log(error)
+            }
+        });
+    }
+    setInterval(updateHeatmap, 60000); // Call updateHeatmap() every minute
+</script>
+
 {% endblock %}
+
+
+
