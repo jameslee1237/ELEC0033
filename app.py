@@ -6,6 +6,7 @@ import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
 from flask import Flask, render_template
+from decimal import Decimal
 
 app = Flask(__name__, template_folder='templates',)
 
@@ -69,7 +70,7 @@ class DynamoDB:
                 TableName='heatmaps',
                 KeySchema=[
                     {
-                        'AttributeName': 'section',
+                        'AttributeName': 'sensor',
                         'KeyType': 'HASH'
                     },
                     {
@@ -79,12 +80,12 @@ class DynamoDB:
                 ],
                 AttributeDefinitions=[
                     {
-                        'AttributeName': 'section',
+                        'AttributeName': 'sensor',
                         'AttributeType': 'S'
                     },
                     {
                         'AttributeName': 'reading',
-                        'AttributeType': 'S'
+                        'AttributeType': 'N'
                     },
                 ],
                 ProvisionedThroughput={
@@ -145,23 +146,33 @@ class DynamoDB:
             return response
 
     def sample_heatmap(self, data):
-        readings = [int(x['reading']) for x in data]
-        readings = readings[0:3]
-        random1, random2 = np.random.randint(readings[0] - 10, readings[0] + 10), np.random.randint(readings[2] - 10, readings[2] + 10)
-        r12, r23 = np.average([readings[0], readings[1]]), np.average([readings[1], readings[2]])
-        r1n, r3n = np.average([readings[0], random1]), np.average([readings[2], random2])
-        temp = [r12, readings[0], r1n, readings[1], 0, 0, r23, readings[2], r3n]
-        for t in temp:
-            if t != 0:
-                t += 20
-        temp = np.array(temp)
-        temp = np.reshape(temp, (3, 3))
-        if os.path.exists('static/image/heatmap.png'):
-            return 0
-        else:
-            heatmap = sns.heatmap(temp, annot=True, cmap='Reds', fmt='.2f')
-            heatmap.figure.savefig('static/image/heatmap.png')
-            return 0
+        latest_items = {}
+        latest_heatmap = {}
+        for item in data:
+            section = item["Section"]
+            timestamp = item["ts"]
+            if section not in latest_items or timestamp > latest_items[section]["ts"]:
+                latest_items[section] = item
+        for section in latest_items:
+            readings = [int(Decimal(latest_items[section]["sensor1"])), int(Decimal(latest_items[section]["sensor2"])), 
+                        int(Decimal(latest_items[section]["sensor3"]))]
+            random1, random2 = np.random.randint(readings[0] - 20, readings[0] + 20), np.random.randint(readings[2] - 20, readings[2] + 20)
+            r12, r23 = np.average([readings[0], readings[1]]), np.average([readings[1], readings[2]])
+            r1n, r3n = np.average([readings[0], random1]), np.average([readings[2], random2])
+            temp = [r12, readings[0], r1n, readings[1], 0, 0, r23, readings[2], r3n]
+            for t in temp:
+                if t != 0:
+                    t += 20
+            temp = np.array(temp)
+            temp = np.reshape(temp, (3, 3))
+            latest_heatmap[section] = temp
+        for section, data in zip(latest_heatmap.keys(), latest_heatmap.values()):
+            heatmap = sns.heatmap(temp, annot=True, cmap='Reds', fmt='.2f', vmin=0, vmax=255)
+            filename = f'static/image/heatmap_{section}.png'
+            if os.path.exists(filename):
+                os.remove(filename)
+            heatmap.figure.savefig(filename)
+            return list(latest_heatmap.keys())
 
 @app.route('/')
 def index():
@@ -170,12 +181,18 @@ def index():
 @app.route('/heatmap')
 def heatmap():
     dynamodb = DynamoDB()
-    data = dynamodb.get_table('heatmaps')
-    dynamodb.sample_heatmap(data['Items'])
-    image_path = 'static/image/heatmap.png'
-    return render_template('./heatmap.html', image_path = image_path)
+    #tables = list(dynamodb.dynamodb.tables.all())
+    #tables = [x.name for x in tables]
+    data = dynamodb.get_table("Heatmap")
+    section_list = dynamodb.sample_heatmap(data['Items'])
+    images = []
+    for section in section_list:
+        image_path = f'static/image/heatmap_{section}.png'
+        images.append(image_path)
+    return render_template('./heatmap.html', images=images)
 
 if __name__ == "__main__":
+    #dynamodb = DynamoDB()
     #dynamodb.create_heatmap_table()
     #dynamodb.insert_heatmap_data()
     #dynamodb.get_data('heatmaps', 'section', 'section1')
